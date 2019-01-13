@@ -29,7 +29,7 @@ ga('create','UA-131716279-1','auto');ga('send','pageview');
 <li>输入流的位置</li>
 </ul>
 <p>Flink可以配置一个固定的时间点，定期产生checkpoint，将checkpoint的数据写入持久存储系统，例如S3或HDFS。将checkpoint数据写入持久存储是异步发生的，这意味着Flink应用程序在checkpoint过程中可以继续处理数据。</p>
-<p>如果发生机器或软件故障，重新启动后，Flink应用程序将从最新的checkpoint点恢复处理； Flink会恢复应用程序状态，将输入流回滚到上次checkpoint保存的位置，然后重新开始运行。这意味着Flink可以像从未发生过故障一样计算结果。</p>
+<p>如果发生机器或软件故障，重新启动后，<a href="http://zhoukaibo.com/tags/flink/">Flink</a>应用程序将从最新的checkpoint点恢复处理； Flink会恢复应用程序状态，将输入流回滚到上次checkpoint保存的位置，然后重新开始运行。这意味着Flink可以像从未发生过故障一样计算结果。</p>
 <p>在Flink 1.4.0之前，Exactly-Once语义仅限于Flink应用程序内部，并没有扩展到Flink数据处理完后发送的大多数外部系统。Flink应用程序与各种数据输出端进行交互，开发人员需要有能力自己维护组件的上下文来保证Exactly-Once语义。</p>
 <p>为了提供端到端的Exactly-Once语义 - 也就是说，除了Flink应用程序内部，Flink写入的外部系统也需要能满足Exactly-Once语义 - 这些外部系统必须提供提交或回滚的方法，然后通过Flink的checkpoint机制来协调。</p>
 <p>分布式系统中，协调提交和回滚的常用方法是<a href="https://en.wikipedia.org/wiki/Two-phase_commit_protocol" target="_blank" rel="noopener">两阶段提交协议</a>。在下一节中，我们将讨论Flink的TwoPhaseCommitSinkFunction是如何利用两阶段提交协议来提供端到端的Exactly-Once语义。</p>
@@ -47,7 +47,7 @@ ga('create','UA-131716279-1','auto');ga('send','pageview');
 <p>brarrier在operator之间传递。对于每一个operator，它触发operator的状态快照写入到state backend。</p>
 <p><img src="https://ws1.sinaimg.cn/large/006tNc79ly1fz0vocuo4tj31hk0u041l.jpg" alt="exactly-once-two-phase-commit-2"></p>
 <p>数据源保存了消费Kafka的偏移量(offset)，之后将checkpoint barrier传递给下一个operator。</p>
-<p>这种方式仅适用于operator具有『内部』状态。所谓内部状态，是指Flink state backend保存和管理的 -例如，第二个operator中window聚合算出来的sum值。当一个进程有它的内部状态的时候，除了在checkpoint之前需要将数据变更写入到state backend，不需要在预提交阶段执行任何其他操作。Flink负责在checkpoint成功的情况下正确提交这些写入，或者在出现故障时中止这些写入。</p>
+<p>这种方式仅适用于operator具有『内部』状态。所谓内部状态，是指Flink state backend保存和管理的 -例如，第二个operator中window聚合算出来的sum值。当一个进程有它的内部状态的时候，除了在checkpoint之前需要将数据变更写入到state backend，不需要在预提交阶段执行任何其他操作。<a href="http://zhoukaibo.com/tags/flink/">Flink</a>负责在checkpoint成功的情况下正确提交这些写入，或者在出现故障时中止这些写入。</p>
 <p><img src="https://ws1.sinaimg.cn/large/006tNc79ly1fz0vothxs7j31hd0u0ago.jpg" alt="exactly-once-two-phase-commit-3"></p>
 <h2 id="示例Flink应用程序启动预提交阶段"><a href="#示例Flink应用程序启动预提交阶段" class="headerlink" title="示例Flink应用程序启动预提交阶段"></a>示例Flink应用程序启动预提交阶段</h2><p>但是，当进程具有『外部』状态时，需要作些额外的处理。外部状态通常以写入外部系统（如Kafka）的形式出现。在这种情况下，为了提供Exactly-Once保证，外部系统必须支持事务，这样才能和两阶段提交协议集成。</p>
 <p>在本文示例中的数据需要写入Kafka，因此数据输出端（Data Sink）有外部状态。在这种情况下，在预提交阶段，除了将其状态写入state backend之外，数据输出端还必须预先提交其外部事务。</p>
@@ -60,7 +60,7 @@ ga('create','UA-131716279-1','auto');ga('send','pageview');
 <ul>
 <li>一旦所有operator完成预提交，就提交一个commit。</li>
 <li>如果至少有一个预提交失败，则所有其他提交都将中止，我们将回滚到上一个成功完成的checkpoint。</li>
-<li>在预提交成功之后，提交的commit需要保证最终成功 - operator和外部系统都需要保障这点。如果commit失败（例如，由于间歇性网络问题），整个Flink应用程序将失败，应用程序将根据用户的重启策略重新启动，还会尝试再提交。这个过程至关重要，因为如果commit最终没有成功，将会导致数据丢失。</li>
+<li>在预提交成功之后，提交的commit需要保证最终成功 - operator和外部系统都需要保障这点。如果commit失败（例如，由于间歇性网络问题），整个<a href="http://zhoukaibo.com/tags/flink/">Flink</a>应用程序将失败，应用程序将根据用户的重启策略重新启动，还会尝试再提交。这个过程至关重要，因为如果commit最终没有成功，将会导致数据丢失。</li>
 </ul>
 <p>因此，我们可以确定所有operator都同意checkpoint的最终结果：所有operator都同意数据已提交，或提交被中止并回滚。</p>
 <h2 id="在Flink中实现两阶段提交Operator"><a href="#在Flink中实现两阶段提交Operator" class="headerlink" title="在Flink中实现两阶段提交Operator"></a>在Flink中实现两阶段提交Operator</h2><p>完整的实现两阶段提交协议可能有点复杂，这就是为什么<a href="http://zhoukaibo.com/tags/flink/">Flink</a>将它的通用逻辑提取到抽象类TwoPhaseCommitSinkFunction中的原因。</p>
