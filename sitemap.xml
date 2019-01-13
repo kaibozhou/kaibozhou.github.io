@@ -2,6 +2,13 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>http://zhoukaibo.com/about/index.html</loc>
+    
+    <lastmod>2019-01-13T14:45:57.351Z</lastmod>
+    
+  </url>
+  
+  <url>
     <loc>http://zhoukaibo.com/2019/01/10/flink-kafka-exactly-once/</loc>
     
     <lastmod>2019-01-13T09:52:29.652Z</lastmod>
@@ -19,13 +26,6 @@
     <loc>http://zhoukaibo.com/2019/01/10/hello-world/</loc>
     
     <lastmod>2019-01-12T18:40:23.862Z</lastmod>
-    
-  </url>
-  
-  <url>
-    <loc>http://zhoukaibo.com/about/index.html</loc>
-    
-    <lastmod>2019-01-12T18:05:54.910Z</lastmod>
     
   </url>
   
