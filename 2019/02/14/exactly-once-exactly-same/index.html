@@ -1,0 +1,124 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>谈谈流计算中的『Exactly Once』特性 | Kaibo's Blog</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.1"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/normalize/8.0.1/normalize.min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//lib.baomitu.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//lib.baomitu.com/jquery/3.3.1/jquery.min.js"></script><link rel="icon" mask="" sizes="any" href="/favicon.ico"><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"><script>(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+ga('create','UA-131716279-1','auto');ga('send','pageview');
+</script><script>var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = 'https://hm.baidu.com/hm.js?' + 'adcf6eb324ad0475bb957857cf925dda';
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+  })();</script></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">谈谈流计算中的『Exactly Once』特性</h1><a id="logo" href="/.">Kaibo's Blog</a><p class="description">Real-time big data processing</p></div><div id="nav-menu"><a class="current" href="/."><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a></div></div><div class="pure-g" id="layout"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">谈谈流计算中的『Exactly Once』特性</h1><div class="post-meta">Feb 14, 2019<script src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><a class="disqus-comment-count" data-disqus-identifier="2019/02/14/exactly-once-exactly-same/" href="/2019/02/14/exactly-once-exactly-same/#disqus_thread"></a><div class="clear"><div class="toc-article" id="toc"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#背景"><span class="toc-number">1.</span> <span class="toc-text">背景</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#最多一次（At-most-once）"><span class="toc-number">1.1.</span> <span class="toc-text">最多一次（At-most-once）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#至少一次（At-least-once）"><span class="toc-number">1.2.</span> <span class="toc-text">至少一次（At-least-once）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#精确一次（Exactly-once）"><span class="toc-number">1.3.</span> <span class="toc-text">精确一次（Exactly-once）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#分布式快照与至少一次事件传递和重复数据删除的比较"><span class="toc-number">2.</span> <span class="toc-text">分布式快照与至少一次事件传递和重复数据删除的比较</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#结论"><span class="toc-number">3.</span> <span class="toc-text">结论</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#参考"><span class="toc-number">4.</span> <span class="toc-text">参考</span></a></li></ol></div></div><div class="post-content"><p>本文翻译自 streaml.io 网站上的一篇博文：<a href="https://streaml.io/blog/exactly-once" target="_blank" rel="noopener">“Exactly once is NOT exactly the same”</a> ，分析了流计算系统中常说的『Exactly Once』特性，主要观点是：『精确一次』并不保证是完全一样。</p>
+<p>目前市面上使用较多的流计算系统有 Apache Storm，<a href="http://zhoukaibo.com/tags/flink/">Apache Flink</a>, Heron, Apache Kafka (Kafka Streams) 和 Apache Spark (Spark Streaming)。关于流计算系统有个被广泛讨论的特性是『exactly-once』语义，很多系统宣称已经支持了这一特性。但是，到底什么是『<a href="http://zhoukaibo.com/tags/exactly-once/">exactly-once</a>』，怎么样才算是实现了『exactly-once』，人们存在很多误解和歧义。接下来我们做下分析。</p>
+<h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><p>流处理（有时称为事件处理）可以简单地描述为是对无界数据或事件的连续处理。流或事件处理应用程序可以或多或少地被描述为有向图，并且通常被描述为有向无环图（DAG）。在这样的图中，每个边表示数据或事件流，每个顶点表示运算符，会使用程序中定义的逻辑处理来自相邻边的数据或事件。有两种特殊类型的顶点，通常称为 sources 和 sinks。sources 读取外部数据/事件到应用程序中，而 sinks 通常会收集应用程序生成的结果。下图是流式应用程序的示例。</p>
+<p><img src="https://ws4.sinaimg.cn/large/006tKfTcly1g0c7ehyk3tj30zm0u0q7i.jpg" alt="A typical stream processing topology"></p>
+<p>流处理引擎通常允许用户指定可靠性模式或处理语义，以指示它将为整个应用程序中的数据处理提供哪些保证。这些保证是有意义的，因为你始终会遇到由于网络，机器等可能导致数据丢失的故障。流处理引擎通常为应用程序提供了三种数据处理语义：最多一次、至少一次和精确一次。</p>
+<p>如下是对这些不同处理语义的宽松定义：</p>
+<h3 id="最多一次（At-most-once）"><a href="#最多一次（At-most-once）" class="headerlink" title="最多一次（At-most-once）"></a>最多一次（At-most-once）</h3><p>这本质上是一『尽力而为』的方法。保证数据或事件最多由应用程序中的所有算子处理一次。 这意味着如果数据在被流应用程序完全处理之前发生丢失，则不会进行其他重试或者重新发送。下图中的例子说明了这种情况。</p>
+<p><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g0c7wns9oyj31da08ht9k.jpg" alt="At-most-once processing semantics"></p>
+<h3 id="至少一次（At-least-once）"><a href="#至少一次（At-least-once）" class="headerlink" title="至少一次（At-least-once）"></a>至少一次（<a href="http://zhoukaibo.com/tags/at-least-once/">At-least-once</a>）</h3><p>应用程序中的所有算子都保证数据或事件至少被处理一次。这通常意味着如果事件在流应用程序完全处理之前丢失，则将从源头重放或重新传输事件。然而，由于事件是可以被重传的，因此一个事件有时会被处理多次，这就是所谓的<a href="http://zhoukaibo.com/tags/at-least-once/">至少一次</a>。</p>
+<p>下图的例子描述了这种情况：第一个算子最初未能成功处理事件，然后在重试时成功，接着在第二次重试时也成功了，其实是没有必要的。</p>
+<p><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g0c855mroej31dj0enabj.jpg" alt="At-least-once processing semantics"></p>
+<h3 id="精确一次（Exactly-once）"><a href="#精确一次（Exactly-once）" class="headerlink" title="精确一次（Exactly-once）"></a>精确一次（Exactly-once）</h3><p>即使是在各种故障的情况下，流应用程序中的所有算子都保证事件只会被『精确一次』的处理。（也有文章将 <a href="http://zhoukaibo.com/tags/exactly-once/">Exactly-once</a> 翻译为：完全一次，恰好一次）</p>
+<p>通常使用两种流行的机制来实现『精确一次』处理语义。</p>
+<ul>
+<li><ol>
+<li>分布式快照/状态检查点</li>
+</ol>
+</li>
+<li><ol start="2">
+<li>至少一次事件传递和对重复数据去重</li>
+</ol>
+</li>
+</ul>
+<p>实现『精确一次』的分布式快照/状态检查点方法受到 Chandy-Lamport 分布式快照算法的启发[1]。通过这种机制，流应用程序中每个算子的所有状态都会定期做 checkpoint。如果是在系统中的任何地方发生失败，每个算子的所有状态都回滚到最新的全局一致 checkpoint 点。在回滚期间，将暂停所有处理。源也会重置为与最近 checkpoint 相对应的正确偏移量。整个流应用程序基本上是回到最近一次的一致状态，然后程序可以从该状态重新启动。下图描述了这种 checkpoint 机制的基础知识。</p>
+<p><img src="https://ws1.sinaimg.cn/large/006tKfTcly1g0c8fakh9aj30xu0u00vn.jpg" alt="Distributed snapshot"></p>
+<p>在上图中，流应用程序在 T1 时间处正常工作，并且做了checkpoint。然而，在时间 T2，算子未能处理输入的数据。此时，S=4 的状态值已保存到持久存储器中，而状态值 S=12 保存在算子的内存中。为了修复这种差异，在时间T3，处理程序将状态回滚到 S=4 并“重放”流中的每个连续状态直到最近，并处理每个数据。最终结果是有些数据已被处理了多次，但这没关系，因为无论执行了多少次回滚，结果状态都是相同的。</p>
+<p>另一种实现『精确一次』的方法是：在每个算子上实现至少一次事件传递和对重复数据去重来。使用此方法的流处理引擎将重放失败事件，以便在事件进入算子中的用户定义逻辑之前，进一步尝试处理并移除每个算子的重复事件。此机制要求为每个算子维护一个事务日志，以跟踪它已处理的事件。利用这种机制的引擎有 Google 的 MillWheel[2] 和<a href="https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it" target="_blank" rel="noopener">Apache Kafka Streams</a>。下图说明了这种机制的要点。</p>
+<p><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g0c8u37q6mj31d80hf0u9.jpg" alt="At-least-once delivery plus deduplication"></p>
+<p>##『精确一次』是真正的『精确一次』吗？<br>现在让我们重新审视『<a href="http://zhoukaibo.com/tags/exactly-once/">精确一次</a>』处理语义真正对最终用户的保证。『精确一次』这个术语在描述正好处理一次时会让人产生误导。</p>
+<p>有些人可能认为『精确一次』描述了事件处理的保证，其中流中的每个事件只被处理一次。实际上，没有引擎能够保证正好只处理一次。在面对任意故障时，不可能保证每个算子中的用户定义逻辑在每个事件中只执行一次，因为用户代码被部分执行的可能性是永远存在的。</p>
+<p>考虑具有流处理运算符的场景，该运算符执行打印传入事件的ID的映射操作，然后返回事件不变。下面的伪代码说明了这个操作：</p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">Map</span> (<span class="type">Event</span> event) &#123;</span><br><span class="line">    <span class="type">Print</span> <span class="string">"Event ID: "</span> + event.getId()</span><br><span class="line">    <span class="type">Return</span> event</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个事件都有一个GUID(全局惟一ID)。如果用户逻辑的精确执行一次得到保证，那么事件ID将只输出一次。但是，这是无法保证的，因为在用户定义的逻辑的执行过程中，随时都可能发生故障。引擎无法自行确定执行用户定义的处理逻辑的时间点。因此，不能保证任意用户定义的逻辑只执行一次。这也意味着，在用户定义的逻辑中实现的外部操作(如写数据库)也不能保证只执行一次。此类操作仍然需要以幂等的方式执行。</p>
+<p>那么，当引擎声明『<a href="http://zhoukaibo.com/tags/exactly-once/">精确一次</a>』处理语义时，它们能保证什么呢？如果不能保证用户逻辑只执行一次，那么什么逻辑只执行一次？当引擎声明『精确一次』处理语义时，它们实际上是在说，它们可以保证引擎管理的状态更新只提交一次到持久的后端存储。</p>
+<p>上面描述的两种机制都使用持久的后端存储作为真实性的来源，可以保存每个算子的状态并自动向其提交更新。对于机制1(分布式快照/状态检查点)，此持久后端状态用于保存流应用程序的全局一致状态检查点(每个算子的检查点状态)。对于机制2(至少一次事件传递加上重复数据删除)，持久后端状态用于存储每个算子的状态以及每个算子的事务日志，该日志跟踪它已经完全处理的所有事件。</p>
+<p>提交状态或对作为真实来源的持久后端应用更新可以被描述为恰好发生一次。然而，如上所述，计算状态的更新/更改，即处理在事件上执行任意用户定义逻辑的事件，如果发生故障，则可能不止一次地发生。换句话说，事件的处理可以发生多次，但是该处理的效果只在持久后端状态存储中反映一次。因此，我们认为有效地描述这些处理语义最好的术语是『有效一次』（effectively once）。</p>
+<h2 id="分布式快照与至少一次事件传递和重复数据删除的比较"><a href="#分布式快照与至少一次事件传递和重复数据删除的比较" class="headerlink" title="分布式快照与至少一次事件传递和重复数据删除的比较"></a>分布式快照与至少一次事件传递和重复数据删除的比较</h2><p>从语义的角度来看，分布式快照和至少一次事件传递以及重复数据删除机制都提供了相同的保证。然而，由于两种机制之间的实现差异，存在显着的性能差异。</p>
+<p>机制1（分布式快照/状态检查点）的性能开销是最小的，因为引擎实际上是往流应用程序中的所有算子一起发送常规事件和特殊事件，而状态检查点可以在后台异步执行。但是，对于大型流应用程序，故障可能会更频繁地发生，导致引擎需要暂停应用程序并回滚所有算子的状态，这反过来又会影响性能。流式应用程序越大，故障发生的可能性就越大，因此也越频繁，反过来，流式应用程序的性能受到的影响也就越大。然而，这种机制是非侵入性的，运行时需要的额外资源影响很小。</p>
+<p>机制2（至少一次事件传递加重复数据删除）可能需要更多资源，尤其是存储。使用此机制，引擎需要能够跟踪每个算子实例已完全处理的每个元组，以执行重复数据删除，以及为每个事件执行重复数据删除本身。这意味着需要跟踪大量的数据，尤其是在流应用程序很大或者有许多应用程序在运行的情况下。执行重复数据删除的每个算子上的每个事件都会产生性能开销。但是，使用这种机制，流应用程序的性能不太可能受到应用程序大小的影响。对于机制1，如果任何算子发生故障，则需要发生全局暂停和状态回滚；对于机制2，失败的影响更加局部性。当在算子中发生故障时，可能尚未完全处理的事件仅从上游源重放/重传。性能影响与流应用程序中发生故障的位置是隔离的，并且对流应用程序中其他算子的性能几乎没有影响。从性能角度来看，这两种机制的优缺点如下。</p>
+<p>分布式快照/状态检查点的优缺点：<br>优点：</p>
+<ul>
+<li>较小的性能和资源开销</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>对性能的影响较大</li>
+<li>拓扑越大，对性能的潜在影响越大</li>
+</ul>
+<p>至少一次事件传递以及重复数据删除机制的优缺点：</p>
+<p>优点：</p>
+<ul>
+<li>故障对性能的影响是局部的</li>
+<li>故障的影响不一定会随着拓扑的大小而增加</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>可能需要大量的存储和基础设施来支持</li>
+<li>每个算子的每个事件的性能开销</li>
+</ul>
+<p>虽然从理论上讲，分布式快照和至少一次事件传递加重复数据删除机制之间存在差异，但两者都可以简化为至少一次处理加幂等性。对于这两种机制，当发生故障时(至少实现一次)，事件将被重放/重传，并且通过状态回滚或事件重复数据删除，算子在更新内部管理状态时本质上是幂等的。</p>
+<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>在这篇博客文章中，我希望能够让你相信『精确一次』这个词是非常具有误导性的。提供『<a href="http://zhoukaibo.com/tags/exactly-once/">精确一次</a>』的处理语义实际上意味着流处理引擎管理的算子状态的不同更新只反映一次。『精确一次』并不能保证事件的处理，即任意用户定义逻辑的执行，只会发生一次。我们更喜欢用『有效一次』（effectively once）这个术语来表示这种保证，因为处理不一定保证只发生一次，但是对引擎管理的状态的影响只反映一次。两种流行的机制，分布式快照和重复数据删除，被用来实现精确/有效的一次性处理语义。这两种机制为消息处理和状态更新提供了相同的语义保证，但是在性能上存在差异。这篇文章并不是要让你相信任何一种机制都优于另一种，因为它们各有利弊。</p>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ol>
+<li><p>Chandy, K. Mani and Leslie Lamport. <a href="http://lamport.azurewebsites.net/pubs/chandy.pdf" target="_blank" rel="noopener">Distributed snapshots: Determining global states of distributed systems</a>. ACM Transactions on Computer Systems (TOCS) 3.1 (1985): 63-75.</p>
+</li>
+<li><p>Akidau, Tyler, et al. <a href="https://www.google.com/url?sa=t&amp;rct=j&amp;q=&amp;esrc=s&amp;source=web&amp;cd=2&amp;cad=rja&amp;uact=8&amp;ved=0ahUKEwj1lOKckO7WAhVHhlQKHWTuCxgQFggxMAE&amp;url=https%3A%2F%2Fwww.cs.cmu.edu%2F~pavlo%2Fcourses%2Ffall2013%2Fstatic%2Fpapers%2Fp734-akidau.pdf&amp;usg=AOvVaw17V8DwQz3BTrfNSXniIO2q" target="_blank" rel="noopener">MillWheel: Fault-tolerant stream processing at internet scale</a>. Proceedings of the VLDB Endowment 6.11 (2013): 1033-1044.</p>
+</li>
+</ol>
+</div><div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>kaibo</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="/2019/02/14/exactly-once-exactly-same/">https://zhoukaibo.com/2019/02/14/exactly-once-exactly-same/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>转载请保留作者及链接</li></ul></div><br><div class="tags"><a href="/tags/exactly-once/">exactly-once</a><a href="/tags/at-least-once/">at-least-once</a></div><div class="post-nav"><a class="next" href="/2019/01/10/flink-kafka-exactly-once/">Apache Flink结合Kafka构建端到端的Exactly-Once处理</a></div><div id="disqus_thread"><div class="btn_click_load"><button class="disqus_click_btn">阅读评论（请确保 Disqus 可以正常加载）</button></div><script type="text/javascript">var disqus_config = function () {
+    this.page.url = 'https://zhoukaibo.com/2019/02/14/exactly-once-exactly-same/';
+    this.page.identifier = '2019/02/14/exactly-once-exactly-same/';
+    this.page.title = '谈谈流计算中的『Exactly Once』特性';
+  };</script><script type="text/javascript" id="disqus-lazy-load-script">$.ajax({
+url: 'https://disqus.com/next/config.json',
+timeout: 2500,
+type: 'GET',
+success: function(){
+  var d = document;
+  var s = d.createElement('script');
+  s.src = '//flying5.disqus.com/embed.js';
+  s.setAttribute('data-timestamp', + new Date());
+  (d.head || d.body).appendChild(s);
+  $('.disqus_click_btn').css('display', 'none');
+},
+error: function() {
+  $('.disqus_click_btn').css('display', 'block');
+}
+});</script><script type="text/javascript" id="disqus-click-load">$('.btn_click_load').click(() => {  //click to load comments
+    (() => { // DON'T EDIT BELOW THIS LINE
+        var d = document;
+        var s = d.createElement('script');
+        s.src = '//flying5.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', + new Date());
+        (d.head || d.body).appendChild(s);
+    })();
+    $('.disqus_click_btn').css('display','none');
+});</script><script type="text/javascript" id="disqus-count-script">$(function() {
+     var xhr = new XMLHttpRequest();
+     xhr.open('GET', '//disqus.com/next/config.json', true);
+     xhr.timeout = 2500;
+     xhr.onreadystatechange = function () {
+       if (xhr.readyState === 4 && xhr.status === 200) {
+         $('.post-meta .post-comments-count').show();
+         var s = document.createElement('script');
+         s.id = 'dsq-count-scr';
+         s.src = 'https://flying5.disqus.com/count.js';
+         s.async = true;
+         (document.head || document.body).appendChild(s);
+       }
+     };
+     xhr.ontimeout = function () { xhr.abort(); };
+     xhr.send(null);
+   });
+</script></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://zhoukaibo.com"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/exactly-once/" style="font-size: 15px;">exactly-once</a> <a href="/tags/at-least-once/" style="font-size: 15px;">at-least-once</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 15px;">kafka</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/02/14/exactly-once-exactly-same/">谈谈流计算中的『Exactly Once』特性</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/flink-kafka-exactly-once/">Apache Flink结合Kafka构建端到端的Exactly-Once处理</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/hello-world/">Hello World</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-comment-o"> 最近评论</i></div><script type="text/javascript" src="//flying5.disqus.com/recent_comments_widget.js?num_items=5&amp;hide_avatars=1&amp;avatar_size=32&amp;excerpt_length=20&amp;hide_mods=1"></script></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">Kaibo's Blog</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.1" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.1" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.1"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.1"></script></div></body></html>

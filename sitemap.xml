@@ -2,9 +2,23 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://zhoukaibo.com/2019/02/14/exactly-once-exactly-same/</loc>
+    
+    <lastmod>2019-02-20T17:45:58.076Z</lastmod>
+    
+  </url>
+  
+  <url>
+    <loc>https://zhoukaibo.com/about/index.html</loc>
+    
+    <lastmod>2019-02-19T16:26:35.397Z</lastmod>
+    
+  </url>
+  
+  <url>
     <loc>https://zhoukaibo.com/2019/01/10/hello-world/</loc>
     
-    <lastmod>2019-01-14T17:21:41.245Z</lastmod>
+    <lastmod>2019-02-19T16:22:38.047Z</lastmod>
     
   </url>
   
@@ -12,13 +26,6 @@
     <loc>https://zhoukaibo.com/2019/01/10/flink-kafka-exactly-once/</loc>
     
     <lastmod>2019-01-14T01:54:25.768Z</lastmod>
-    
-  </url>
-  
-  <url>
-    <loc>https://zhoukaibo.com/about/index.html</loc>
-    
-    <lastmod>2019-01-13T14:45:57.351Z</lastmod>
     
   </url>
   
