@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>Java SPI 机制分析 | Kaibo's Blog</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.1"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/normalize/8.0.1/normalize.min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//lib.baomitu.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//lib.baomitu.com/jquery/3.3.1/jquery.min.js"></script><link rel="icon" mask="" sizes="any" href="/favicon.ico"><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"><script>(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+ga('create','UA-131716279-1','auto');ga('send','pageview');
+</script><script>var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = 'https://hm.baidu.com/hm.js?' + 'adcf6eb324ad0475bb957857cf925dda';
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+  })();</script></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">Java SPI 机制分析</h1><a id="logo" href="/.">Kaibo's Blog</a><p class="description">Real-time big data processing</p></div><div id="nav-menu"><a class="current" href="/."><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a></div></div><div class="pure-g" id="layout"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">Java SPI 机制分析</h1><div class="post-meta">Mar 16, 2019<script src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><a class="disqus-comment-count" data-disqus-identifier="2019/03/16/java-spi/" href="/2019/03/16/java-spi/#disqus_thread"></a><div class="clear"><div class="toc-article" id="toc"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#SPI-概述"><span class="toc-number">1.</span> <span class="toc-text">SPI 概述</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#SPI-实例说明"><span class="toc-number">2.</span> <span class="toc-text">SPI 实例说明</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#SPI-实现原理"><span class="toc-number">3.</span> <span class="toc-text">SPI 实现原理</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#总结"><span class="toc-number">4.</span> <span class="toc-text">总结</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#优点："><span class="toc-number">4.1.</span> <span class="toc-text">优点：</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#缺点："><span class="toc-number">4.2.</span> <span class="toc-text">缺点：</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#附录"><span class="toc-number">5.</span> <span class="toc-text">附录</span></a></li></ol></div></div><div class="post-content"><h2 id="SPI-概述"><a href="#SPI-概述" class="headerlink" title="SPI 概述"></a>SPI 概述</h2><p><a href="https://docs.oracle.com/javase/9/docs/api/java/util/ServiceLoader.html" target="_blank" rel="noopener">SPI</a> 全称为(Service Provider Interface)，是 JDK 内置的一种服务发现机制。它可以动态的为某个接口寻找服务实现，有点类似 IOC(Inversion of Control)的思想，将装配的控制权移到程序之外，在模块化设计中这个机制尤其重要。</p>
+<p>使用 SPI 机制需要在 classpath 下的 META-INF/services/ 目录里创建一个以服务接口命名的文件，这个文件里的内容就是这个接口的具体的实现类。</p>
+<p>以 JavaMail 程序为例，协议层只需要定义好邮件发送接口，业务层实现对应的协议如 SMTP, IMAP, POP 就可以了。</p>
+<p><img src="https://ws3.sinaimg.cn/large/006tKfTcly1g19qohpsqyj30cm0dlgmf.jpg" alt="JavaMail API"></p>
+<h2 id="SPI-实例说明"><a href="#SPI-实例说明" class="headerlink" title="SPI 实例说明"></a>SPI 实例说明</h2><p>接下来通过一个具体的例子来讲解 SPI 的用法，例子的代码在 <a href="https://github.com/kaibozhou/spi-demo" target="_blank" rel="noopener">github</a> 上可以看到。</p>
+<p>首先我们提供一个接口类 <code>IOperation</code> 以及它的两个实现类 <code>PlusOperationImpl</code> 和 <code>DivisionOperationImpl</code>，都在 <code>com.zhoukaibo.spi</code> 这个包路径下。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">interface</span> <span class="title">IOperation</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">	<span class="function"><span class="keyword">int</span> <span class="title">operation</span><span class="params">(<span class="keyword">int</span> numberA, <span class="keyword">int</span> numberB)</span></span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">PlusOperationImpl</span> <span class="keyword">implements</span> <span class="title">IOperation</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">	<span class="function"><span class="keyword">public</span> <span class="title">PlusOperationImpl</span><span class="params">()</span> </span>&#123;</span><br><span class="line">		System.out.println(<span class="string">"plusOperation construct"</span>);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">operation</span><span class="params">(<span class="keyword">int</span> numberA, <span class="keyword">int</span> numberB)</span> </span>&#123;</span><br><span class="line">    	System.out.println(<span class="string">"Operation: plus"</span>);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> numberA + numberB;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">DivisionOperationImpl</span> <span class="keyword">implements</span> <span class="title">IOperation</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">	<span class="function"><span class="keyword">public</span> <span class="title">DivisionOperationImpl</span><span class="params">()</span> </span>&#123;</span><br><span class="line">		System.out.println(<span class="string">"division construct"</span>);</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">operation</span><span class="params">(<span class="keyword">int</span> numberA, <span class="keyword">int</span> numberB)</span> </span>&#123;</span><br><span class="line">	    System.out.println(<span class="string">"Operation: division"</span>);</span><br><span class="line">        <span class="keyword">return</span> numberA / numberB;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>接着在 classpath 下创建文件夹 META-INF/services，在文件夹中新建一个文件 <code>com.zhoukaibo.spi.IOperation</code>。并在文件中写入具体的实现类：<code>com.zhoukaibo.spi.PlusOperationImpl</code> 和 <code>com.zhoukaibo.spi.DivisionOperationImpl</code>。</p>
+<p>最后，我们就可以利用 ServiceLoader 进行服务发现了：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> </span>&#123;</span><br><span class="line">	ServiceLoader&lt;IOperation&gt; operations = ServiceLoader.load(IOperation.class);</span><br><span class="line"></span><br><span class="line">	<span class="keyword">int</span> numberA = <span class="number">6</span>;</span><br><span class="line">	<span class="keyword">int</span> numberB = <span class="number">3</span>;</span><br><span class="line">	System.out.println(<span class="string">"NumberA: "</span> + numberA + <span class="string">", NumberB: "</span> + numberB);</span><br><span class="line">	Iterator&lt;IOperation&gt; iterator = operations.iterator();</span><br><span class="line">	<span class="keyword">while</span> (iterator.hasNext()) &#123;</span><br><span class="line">		IOperation operation = iterator.next();</span><br><span class="line">		System.out.println(operation.operation(numberA, numberB));</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>程序输出：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">NumberA: <span class="number">6</span>, NumberB: <span class="number">3</span></span><br><span class="line">division construct</span><br><span class="line">Operation: division</span><br><span class="line"><span class="number">2</span></span><br><span class="line">plusOperation construct</span><br><span class="line">Operation: plus</span><br><span class="line"><span class="number">9</span></span><br></pre></td></tr></table></figure>
+<h2 id="SPI-实现原理"><a href="#SPI-实现原理" class="headerlink" title="SPI 实现原理"></a>SPI 实现原理</h2><ol>
+<li>应用程序调用 ServiceLoader.load 方法</li>
+</ol>
+<p>ServiceLoader.load 方法内先创建一个新的ServiceLoader，并实例化该类中的成员变数，包括：</p>
+<ul>
+<li>ClassLoader loader(类载入器)</li>
+<li>AccessControlContext acc(访问控制器)</li>
+<li>LinkedHashMap&lt;String, S&gt; providers(用于缓存载入成功的类)</li>
+<li>LazyIterator lookupIterator(实现迭代器功能)</li>
+</ul>
+<ol start="2">
+<li>应用程序通过迭代器获取对象实例</li>
+</ol>
+<p>ServiceLoader 先判断成员变量 providers 对象中否有缓存实例对象，如果有缓存，直接返回。</p>
+<p>如果没有缓存，执行类的装载：读取 META-INF/services/ 下的配置文件，获得所有能被实例化的类的名称，通过反射方法 Class.forName() 载入类对象，并用 instance() 方法将类实例化。把实例化后的类缓存到providers 对象中然后返回实例对象。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><h3 id="优点："><a href="#优点：" class="headerlink" title="优点："></a>优点：</h3><p>使用 <a href="https://zhoukaibo.com/tags/java/">Java</a> SPI 机制的优势是实现解耦，使得接口的定义与具体业务实现分离，而不是耦合在一起。应用程序可以根据实际业务情况启用或替换具体组件。</p>
+<h3 id="缺点："><a href="#缺点：" class="headerlink" title="缺点："></a>缺点：</h3><ul>
+<li>不能按需加载。虽然 ServiceLoader 做了延迟载入，但是基本只能通过遍历全部获取，也就是接口的实现类得全部载入并实例化一遍。如果你并不想用某些实现类，或者某些实例类加载很耗时，它也被载入并实例化了，这就造成了浪费。</li>
+<li>获取某个实现类的方式不够灵活，只能通过 Iterator 形式获取，不能根据某个参数来获取对应的实现类。</li>
+<li>多个并发多线程使用 ServiceLoader 类的实例是不安全的。</li>
+<li>加载不到实现类时抛出并不是真正原因的异常，错误很难定位。</li>
+</ul>
+<p>鉴于 SPI 的诸多缺点，很多系统都是自己实现了一套类加载机制，例如 dubbo,  <a href="https://github.com/pf4j/pf4j" target="_blank" rel="noopener">Plugin Framework for Java (PF4J)</a> 等。</p>
+<h2 id="附录"><a href="#附录" class="headerlink" title="附录"></a>附录</h2><ul>
+<li>本文SPI例子的<a href="https://zhoukaibo.com/tags/java/">Java</a>代码：<a href="https://github.com/kaibozhou/spi-demo" target="_blank" rel="noopener">https://github.com/kaibozhou/spi-demo</a></li>
+<li>使用 PF4J 的示例代码：<a href="https://github.com/kaibozhou/pf4j-demo" target="_blank" rel="noopener">https://github.com/kaibozhou/pf4j-demo</a></li>
+</ul>
+</div><div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>kaibo</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="/2019/03/16/java-spi/">https://zhoukaibo.com/2019/03/16/java-spi/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>转载请保留作者及链接</li></ul></div><br><div class="tags"><a href="/tags/java/">java</a></div><div class="post-nav"><a class="next" href="/2019/02/14/exactly-once-exactly-same/">谈谈流计算中的『Exactly Once』特性</a></div><div id="disqus_thread"><div class="btn_click_load"><button class="disqus_click_btn">阅读评论（请确保 Disqus 可以正常加载）</button></div><script type="text/javascript">var disqus_config = function () {
+    this.page.url = 'https://zhoukaibo.com/2019/03/16/java-spi/';
+    this.page.identifier = '2019/03/16/java-spi/';
+    this.page.title = 'Java SPI 机制分析';
+  };</script><script type="text/javascript" id="disqus-lazy-load-script">$.ajax({
+url: 'https://disqus.com/next/config.json',
+timeout: 2500,
+type: 'GET',
+success: function(){
+  var d = document;
+  var s = d.createElement('script');
+  s.src = '//flying5.disqus.com/embed.js';
+  s.setAttribute('data-timestamp', + new Date());
+  (d.head || d.body).appendChild(s);
+  $('.disqus_click_btn').css('display', 'none');
+},
+error: function() {
+  $('.disqus_click_btn').css('display', 'block');
+}
+});</script><script type="text/javascript" id="disqus-click-load">$('.btn_click_load').click(() => {  //click to load comments
+    (() => { // DON'T EDIT BELOW THIS LINE
+        var d = document;
+        var s = d.createElement('script');
+        s.src = '//flying5.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', + new Date());
+        (d.head || d.body).appendChild(s);
+    })();
+    $('.disqus_click_btn').css('display','none');
+});</script><script type="text/javascript" id="disqus-count-script">$(function() {
+     var xhr = new XMLHttpRequest();
+     xhr.open('GET', '//disqus.com/next/config.json', true);
+     xhr.timeout = 2500;
+     xhr.onreadystatechange = function () {
+       if (xhr.readyState === 4 && xhr.status === 200) {
+         $('.post-meta .post-comments-count').show();
+         var s = document.createElement('script');
+         s.id = 'dsq-count-scr';
+         s.src = 'https://flying5.disqus.com/count.js';
+         s.async = true;
+         (document.head || document.body).appendChild(s);
+       }
+     };
+     xhr.ontimeout = function () { xhr.abort(); };
+     xhr.send(null);
+   });
+</script></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://zhoukaibo.com"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/exactly-once/" style="font-size: 15px;">exactly-once</a> <a href="/tags/at-least-once/" style="font-size: 15px;">at-least-once</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 15px;">kafka</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/03/16/java-spi/">Java SPI 机制分析</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/02/14/exactly-once-exactly-same/">谈谈流计算中的『Exactly Once』特性</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/flink-kafka-exactly-once/">Apache Flink结合Kafka构建端到端的Exactly-Once处理</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/hello-world/">Hello World</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-comment-o"> 最近评论</i></div><script type="text/javascript" src="//flying5.disqus.com/recent_comments_widget.js?num_items=5&amp;hide_avatars=1&amp;avatar_size=32&amp;excerpt_length=20&amp;hide_mods=1"></script></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">Kaibo's Blog</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.1" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.1" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.1"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.1"></script></div></body></html>
