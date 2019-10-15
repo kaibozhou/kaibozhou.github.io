@@ -1,0 +1,201 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>flink-yarn-k8s-principle-practice | Kaibo's Blog</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.1"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/normalize/8.0.1/normalize.min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//lib.baomitu.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//lib.baomitu.com/jquery/3.3.1/jquery.min.js"></script><link rel="icon" mask="" sizes="any" href="/favicon.ico"><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"><script>(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+ga('create','UA-131716279-1','auto');ga('send','pageview');
+</script><script>var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = 'https://hm.baidu.com/hm.js?' + 'adcf6eb324ad0475bb957857cf925dda';
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+  })();</script></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">flink-yarn-k8s-principle-practice</h1><a id="logo" href="/.">Kaibo's Blog</a><p class="description">Real-time big data processing</p></div><div id="nav-menu"><a class="current" href="/."><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a></div></div><div class="pure-g" id="layout"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">flink-yarn-k8s-principle-practice</h1><div class="post-meta">Oct 15, 2019<script src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><a class="disqus-comment-count" data-disqus-identifier="2019/10/15/flink-yarn-k8s-principle-practice/" href="/2019/10/15/flink-yarn-k8s-principle-practice/#disqus_thread"></a><div class="clear"><div class="toc-article" id="toc"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Flink-架构概览"><span class="toc-number">1.</span> <span class="toc-text">Flink 架构概览</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink架构概览–Job"><span class="toc-number">1.1.</span> <span class="toc-text">Flink架构概览–Job</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink架构概览–JobManager"><span class="toc-number">1.2.</span> <span class="toc-text">Flink架构概览–JobManager</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink架构概览–TaskManager"><span class="toc-number">1.3.</span> <span class="toc-text">Flink架构概览–TaskManager</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-运行时相关组件"><span class="toc-number">1.4.</span> <span class="toc-text">Flink 运行时相关组件</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#Flink-on-Yarn-原理及实践"><span class="toc-number">2.</span> <span class="toc-text">Flink on Yarn 原理及实践</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#Yarn-架构原理–总览"><span class="toc-number">2.1.</span> <span class="toc-text">Yarn 架构原理–总览</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Yarn架构原理–组件"><span class="toc-number">2.2.</span> <span class="toc-text">Yarn架构原理–组件</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Yarn-架构原理–交互"><span class="toc-number">2.3.</span> <span class="toc-text">Yarn 架构原理–交互</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Yarn–Per-Job"><span class="toc-number">2.4.</span> <span class="toc-text">Flink on Yarn–Per Job</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Yarn–Session"><span class="toc-number">2.5.</span> <span class="toc-text">Flink on Yarn–Session</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Yarn模式特点"><span class="toc-number">2.6.</span> <span class="toc-text">Yarn模式特点</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Yarn-实践"><span class="toc-number">2.7.</span> <span class="toc-text">Flink on Yarn 实践</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#Flink-on-Kubernetes-原理剖析"><span class="toc-number">3.</span> <span class="toc-text">Flink on Kubernetes 原理剖析</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#Kubernetes–基本概念"><span class="toc-number">3.1.</span> <span class="toc-text">Kubernetes–基本概念</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Kubernetes–架构图"><span class="toc-number">3.2.</span> <span class="toc-text">Kubernetes–架构图</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Kubernetes–核心概念"><span class="toc-number">3.3.</span> <span class="toc-text">Kubernetes–核心概念</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Kubernetes–架构"><span class="toc-number">3.4.</span> <span class="toc-text">Flink on Kubernetes–架构</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Kubernetes–JobManager"><span class="toc-number">3.5.</span> <span class="toc-text">Flink on Kubernetes–JobManager</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Kubernetes–TaskManager"><span class="toc-number">3.6.</span> <span class="toc-text">Flink on Kubernetes–TaskManager</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Kubernetes–交互"><span class="toc-number">3.7.</span> <span class="toc-text">Flink on Kubernetes–交互</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Flink-on-Kubernetes–实践"><span class="toc-number">3.8.</span> <span class="toc-text">Flink on Kubernetes–实践</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#Session-Cluster"><span class="toc-number">3.8.1.</span> <span class="toc-text">Session Cluster</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Job-Cluster"><span class="toc-number">3.8.2.</span> <span class="toc-text">Job Cluster</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#Flink-on-Yarn-Kubernetes-问题解答"><span class="toc-number">4.</span> <span class="toc-text">Flink on Yarn/Kubernetes 问题解答</span></a></li></ol></div></div><div class="post-content"><p>本文是我参加 Apache Flink China 社区钉钉群直播的教程（<a href="(https://ververica.cn/developers/flink-training-course2/">进阶篇 2.4</a>)）。我稍作调整后发在<a href="https://zhoukaibo.com">个人网站(zhoukaibo.com)</a>上。</p>
+<p>文中首先对 <a href="https://zhoukaibo.com/tags/flink/">Flink</a> 架构进行了概述；其次介绍了Yarn在Flink应用中的原理及实践；再次介绍了Kubernetes在Flink应用中的原理及实践；最后对Flink on Yarn/Kubernetes中存在的一些问题进行了解析。</p>
+<h1 id="Flink-架构概览"><a href="#Flink-架构概览" class="headerlink" title="Flink 架构概览"></a>Flink 架构概览</h1><h2 id="Flink架构概览–Job"><a href="#Flink架构概览–Job" class="headerlink" title="Flink架构概览–Job"></a>Flink架构概览–Job</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015223853.png" alt=""></p>
+<p>用户通过 DataStream API、DataSet API、SQL 和 Table API 编写 Flink 任务，它会生成一个JobGraph。JobGraph 是由 source、map()、keyBy()/window()/apply() 和 Sink 等算子组成的。当 JobGraph 提交给 Flink 集群后，能够以 Local、Standalone、<a href="https://zhoukaibo.com/tags/yarn/">Yarn</a> 和 <a href="https://zhoukaibo.com/tags/k8s/">Kubernetes</a> 四种模式运行。</p>
+<h2 id="Flink架构概览–JobManager"><a href="#Flink架构概览–JobManager" class="headerlink" title="Flink架构概览–JobManager"></a>Flink架构概览–JobManager</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015223909.png" alt=""></p>
+<p>JobManager的功能主要有：</p>
+<ul>
+<li>将 JobGraph 转换成 Execution Graph，最终将 Execution Graph 拿来运行</li>
+<li>Scheduler 组件负责 Task 的调度</li>
+<li>Checkpoint Coordinator 组件负责协调整个任务的 Checkpoint，包括 Checkpoint 的开始和完成</li>
+<li>通过 Actor System 与 TaskManager 进行通信</li>
+<li>其它的一些功能，例如 Recovery Metadata，用于进行故障恢复时，可以从 Metadata里面读取数据。 </li>
+</ul>
+<h2 id="Flink架构概览–TaskManager"><a href="#Flink架构概览–TaskManager" class="headerlink" title="Flink架构概览–TaskManager"></a>Flink架构概览–TaskManager</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015223928.png" alt=""></p>
+<p>TaskManager 是负责具体任务的执行过程，在 JobManager 申请到资源之后开始启动。TaskManager 里面的主要组件有：</p>
+<ul>
+<li>Memory &amp; I/O Manager，即内存I/O的管理</li>
+<li>Network Manager，用来对网络方面进行管理</li>
+<li>Actor system，用来负责网络的通信</li>
+</ul>
+<p>TaskManager 被分成很多个 TaskSlot，每个任务都要运行在一个 TaskSlot 里面，TaskSlot 是调度资源里的最小单位。</p>
+<p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015223944.jpg" alt=""></p>
+<p>在介绍 <a href="https://zhoukaibo.com/tags/yarn/">Yarn</a> 之前先简单的介绍一下 Flink Standalone 模式，这样有助于更好地了解 Yarn 和 <a href="https://zhoukaibo.com/tags/k8s/">Kubernetes</a> 架构。</p>
+<ul>
+<li>在 Standalone 模式下，Master 和 TaskManager 可以运行在同一台机器上，也可以运行在不同的机器上。</li>
+<li>在 Master 进程中，Standalone ResourceManager 的作用是对资源进行管理。当用户通过 Flink Cluster Client 将 JobGraph 提交给 Master 时，JobGraph 先经过 Dispatcher。</li>
+<li>当 Dispatcher 收到客户端的请求之后，生成一个 JobManager。接着 JobManager 进程向 Standalone ResourceManager 申请资源，最终再启动 TaskManager。</li>
+<li>TaskManager 启动之后，会有一个注册的过程，注册之后 JobManager 再将具体的 Task 任务分发给这个 TaskManager 去执行。</li>
+</ul>
+<p>以上就是一个 Standalone 任务的运行过程。 </p>
+<h2 id="Flink-运行时相关组件"><a href="#Flink-运行时相关组件" class="headerlink" title="Flink 运行时相关组件"></a>Flink 运行时相关组件</h2><p>接下来总结一下 <a href="https://zhoukaibo.com/tags/flink/">Flink</a> 的基本架构和它在运行时的一些组件，具体如下： </p>
+<ul>
+<li>Client：用户通过 SQL 或者 API 的方式进行任务的提交，提交后会生成一个 JobGraph。</li>
+<li>JobManager：JobManager 接受到用户的请求之后，会对任务进行调度，并且申请资源启动 TaskManager。</li>
+<li>TaskManager：它负责一个具体 Task 的执行。TaskManager 向 JobManager 进行注册，当 TaskManager 接收到 JobManager 分配的任务之后，开始执行具体的任务。</li>
+</ul>
+<h1 id="Flink-on-Yarn-原理及实践"><a href="#Flink-on-Yarn-原理及实践" class="headerlink" title="Flink on Yarn 原理及实践"></a>Flink on Yarn 原理及实践</h1><h2 id="Yarn-架构原理–总览"><a href="#Yarn-架构原理–总览" class="headerlink" title="Yarn 架构原理–总览"></a>Yarn 架构原理–总览</h2><p>Yarn 模式在国内使用比较广泛，基本上大多数公司在生产环境中都使用过 Yarn 模式。首先介绍一下 Yarn 的架构原理，因为只有足够了解 Yarn 的架构原理，才能更好的知道 Flink 是如何在 Yarn 上运行的。</p>
+<p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224001.png" alt=""></p>
+<p>Yarn 的架构原理如上图所示，最重要的角色是 ResourceManager，主要用来负责整个资源的管理，Client 端是负责向 ResourceManager 提交任务。</p>
+<p>用户在 Client 端提交任务后会先给到 Resource Manager。Resource Manager 会启动 Container，接着进一步启动 Application Master，即对 Master 节点的启动。当 Master 节点启动之后，会向 Resource Manager 再重新申请资源，当 Resource Manager 将资源分配给 Application Master 之后，Application Master 再将具体的 Task 调度起来去执行。</p>
+<h2 id="Yarn架构原理–组件"><a href="#Yarn架构原理–组件" class="headerlink" title="Yarn架构原理–组件"></a>Yarn架构原理–组件</h2><p>Yarn 集群中的组件包括：</p>
+<ul>
+<li>ResourceManager (RM)：ResourceManager (RM)负责处理客户端请求、启动/监控 ApplicationMaster、监控 NodeManager、资源的分配与调度，包含 Scheduler 和 Applications Manager。</li>
+<li>ApplicationMaster (AM)：ApplicationMaster (AM)运行在 Slave 上，负责数据切分、申请资源和分配、任务监控和容错。</li>
+<li>NodeManager (NM)：NodeManager (NM)运行在 Slave 上，用于单节点资源管理、AM/RM通信以及汇报状态。</li>
+<li>Container：Container 负责对资源进行抽象，包括内存、CPU、磁盘，网络等资源。</li>
+</ul>
+<h2 id="Yarn-架构原理–交互"><a href="#Yarn-架构原理–交互" class="headerlink" title="Yarn 架构原理–交互"></a>Yarn 架构原理–交互</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224017.png" alt=""></p>
+<p>以在 <a href="https://zhoukaibo.com/tags/yarn/">Yarn</a> 上运行 MapReduce 任务为例来讲解下 Yarn 架构的交互原理：</p>
+<ul>
+<li>首先，用户编写 MapReduce 代码后，通过 Client 端进行任务提交</li>
+<li>ResourceManager 在接收到客户端的请求后，会分配一个 Container 用来启动 ApplicationMaster，并通知 NodeManager 在这个 Container 下启动 ApplicationMaster。</li>
+<li>ApplicationMaster 启动后，向 ResourceManager 发起注册请求。接着 ApplicationMaster 向 ResourceManager 申请资源。根据获取到的资源，和相关的 NodeManager 通信，要求其启动程序。</li>
+<li>一个或者多个 NodeManager 启动 Map/Reduce Task。</li>
+<li>NodeManager 不断汇报 Map/Reduce Task 状态和进展给 ApplicationMaster。</li>
+<li>当所有 Map/Reduce Task 都完成时，ApplicationMaster 向 ResourceManager 汇报任务完成，并注销自己。</li>
+</ul>
+<h2 id="Flink-on-Yarn–Per-Job"><a href="#Flink-on-Yarn–Per-Job" class="headerlink" title="Flink on Yarn–Per Job"></a>Flink on Yarn–Per Job</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224033.jpg" alt=""></p>
+<p>Flink on Yarn中的 Per Job 模式是指每次提交一个任务，然后任务运行完成之后资源就会被释放。在了解了 Yarn 的原理之后，Per Job 的流程也就比较容易理解了，具体如下：</p>
+<ul>
+<li>首先 Client 提交 Yarn App，比如 JobGraph 或者 JARs</li>
+<li>接下来 Yarn 的 ResourceManager 会申请第一个 Container。这个Container 通过 Application Master 启动进程，Application Master 里面运行的是 <a href="https://zhoukaibo.com/tags/flink/">Flink</a> 程序，即 Flink-Yarn ResourceManager 和 JobManager。</li>
+<li>最后 Flink-Yarn ResourceManager 向 Yarn ResourceManager 申请资源。当分配到资源后，启动 TaskManager。TaskManager 启动后向 Flink-Yarn ResourceManager 进行注册，注册成功后 JobManager 就会分配具体的任务给 TaskManager 开始执行。</li>
+</ul>
+<h2 id="Flink-on-Yarn–Session"><a href="#Flink-on-Yarn–Session" class="headerlink" title="Flink on Yarn–Session"></a>Flink on Yarn–Session</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224102.jpg" alt=""></p>
+<p>在 Per Job 模式中，执行完任务后整个资源就会释放，包括 JobManager、TaskManager 都全部退出。而  Session 模式则不一样，它的 Dispatcher 和 ResourceManager 是可以复用的。Session 模式下，当 Dispatcher 在收到请求之后，会启动 JobManager(A)，让 JobManager(A) 来完成启动 TaskManager，接着会启动 JobManager(B) 和对应的 TaskManager 的运行。当 A、B 任务运行完成后，资源并不会释放。Session 模式也称为多线程模式，其特点是资源会一直存在不会释放，多个 JobManager 共享一个 Dispatcher，而且还共享 Flink-YARN ResourceManager。</p>
+<p>Session 模式和 Per Job 模式的应用场景不一样。Per Job 模式比较适合那种对启动时间不敏感，运行时间较长的任务。Seesion 模式适合短时间运行的任务，一般是批处理任务。若用 Per Job 模式去运行短时间的任务，那就需要频繁的申请资源，运行结束后，还需要资源释放，下次还需再重新申请资源才能运行。显然，这种任务会频繁启停的情况不适用于 Per Job 模式，更适合用 Session 模式。</p>
+<h2 id="Yarn模式特点"><a href="#Yarn模式特点" class="headerlink" title="Yarn模式特点"></a>Yarn模式特点</h2><p>Yarn 模式的优点有：</p>
+<ul>
+<li>资源的统一管理和调度。<a href="https://zhoukaibo.com/tags/yarn/">Yarn</a> 集群中所有节点的资源（内存、CPU、磁盘、网络等）被抽象为 Container。计算框架需要资源进行运算任务时需要向 Resource Manager 申请 Container，YARN 按照特定的策略对资源进行调度和进行 Container 的分配。Yarn 模式能通过多种任务调度策略来利用提高集群资源利用率。例如 FIFO Scheduler、Capacity Scheduler、Fair Scheduler，并能设置任务优先级。</li>
+<li>资源隔离：Yarn 使用了轻量级资源隔离机制 Cgroups 进行资源隔离以避免相互干扰，一旦 Container 使用的资源量超过事先定义的上限值，就将其杀死。</li>
+<li>自动 failover 处理。例如 Yarn NodeManager 监控、Yarn ApplicationManager 异常恢复。</li>
+</ul>
+<p>Yarn 模式虽然有不少优点，但是也有诸多缺点，例如运维部署成本较高，灵活性不够。</p>
+<h2 id="Flink-on-Yarn-实践"><a href="#Flink-on-Yarn-实践" class="headerlink" title="Flink on Yarn 实践"></a>Flink on Yarn 实践</h2><p>关于 Flink on Yarn 的实践在 <a href="https://ververica.cn/developers/flink-training-course1/" target="_blank" rel="noopener">https://ververica.cn/developers/flink-training-course1/</a> 上面有很多课程，例如：《Flink 安装部署、环境配置及运行应用程序》 和 《客户端操作》都是基于 Yarn 进行讲解的，这里就不再赘述。</p>
+<h1 id="Flink-on-Kubernetes-原理剖析"><a href="#Flink-on-Kubernetes-原理剖析" class="headerlink" title="Flink on Kubernetes 原理剖析"></a>Flink on Kubernetes 原理剖析</h1><p>Kubernetes 是 Google 开源的容器集群管理系统，其提供应用部署、维护、扩展机制等功能，利用 Kubernetes 能方便地管理跨机器运行容器化的应用。Kubernetes 和 Yarn 相比，相当于下一代的资源管理系统，但是它的能力远远不止这些。</p>
+<h2 id="Kubernetes–基本概念"><a href="#Kubernetes–基本概念" class="headerlink" title="Kubernetes–基本概念"></a>Kubernetes–基本概念</h2><p>Kubernetes（k8s）中的 Master 节点，负责管理整个集群，含有一个集群的资源数据访问入口，还包含一个 Etcd 高可用键值存储服务。Master 中运行着 API Server，Controller Manager 及 Scheduler 服务。</p>
+<p>Node 为集群的一个操作单元，是 Pod 运行的宿主机。Node 节点里包含一个 agent 进程，能够维护和管理该Node 上的所有容器的创建、启停等。Node 还含有一个服务端 kube-proxy，用于服务发现、反向代理和负载均衡。Node 底层含有 docker engine，docker引擎主要负责本机容器的创建和管理工作。</p>
+<p>Pod 运行于 Node 节点上，是若干相关容器的组合。在 k8s 里面 Pod 是创建、调度和管理的最小单位。</p>
+<h2 id="Kubernetes–架构图"><a href="#Kubernetes–架构图" class="headerlink" title="Kubernetes–架构图"></a>Kubernetes–架构图</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224120.png" alt=""></p>
+<p>Kubernetes 的架构如图所示，从这个图里面能看出 <a href="https://zhoukaibo.com/tags/k8s/">Kubernetes</a> 的整个运行过程。</p>
+<ul>
+<li>API Server 相当于用户的一个请求入口，用户可以提交命令给 Etcd，这时会将这些请求存储到 Etcd 里面去。</li>
+<li>Etcd 是一个键值存储，负责将任务分配给具体的机器，在每个节点上的 Kubelet 会找到对应的 container 在本机上运行。</li>
+<li>用户可以提交一个 Replication Controller 资源描述，Replication Controller 会监视集群中的容器并保持数量；用户也可以提交 service 描述文件，并由 kube proxy 负责具体工作的流量转发。</li>
+</ul>
+<h2 id="Kubernetes–核心概念"><a href="#Kubernetes–核心概念" class="headerlink" title="Kubernetes–核心概念"></a>Kubernetes–核心概念</h2><p>Kubernetes 中比较重要的概念有：</p>
+<ul>
+<li>Replication Controller (RC) 用来管理 Pod 的副本。RC 确保任何时候 Kubernetes 集群中有指定数量的 pod 副本(replicas) 在运行， 如果少于指定数量的 pod 副本，RC 会启动新的 Container，反之会杀死多余的以保证数量不变。</li>
+<li>Service 提供了一个统一的服务访问入口以及服务代理和发现机制</li>
+<li>Persistent Volume(PV) 和 Persistent Volume Claim(PVC) 用于数据的持久化存储。</li>
+<li>ConfigMap 是指存储用户程序的配置文件，其后端存储是基于 Etcd。</li>
+</ul>
+<h2 id="Flink-on-Kubernetes–架构"><a href="#Flink-on-Kubernetes–架构" class="headerlink" title="Flink on Kubernetes–架构"></a>Flink on Kubernetes–架构</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224138.jpg" alt=""></p>
+<p>Flink on Kubernetes 的架构如图所示，Flink 任务在 <a href="https://zhoukaibo.com/tags/k8s/">Kubernetes</a> 上运行的步骤有：</p>
+<ul>
+<li>首先往 Kubernetes 集群提交了资源描述文件后，会启动 Master 和 Worker 的 container。</li>
+<li>Master Container 中会启动Flink Master Process，包含 Flink-Container ResourceManager、JobManager 和 Program Runner。</li>
+<li>Worker Container 会启动 TaskManager，并向负责资源管理的 ResourceManager 进行注册，注册完成之后，由 JobManager 将具体的任务分给 Container，再由 Container 去执行。</li>
+<li>需要说明的是，在 Flink 里的 Master 和 Worker 都是一个镜像，只是脚本的命令不一样，通过参数来选择启动 master 还是启动 Worker。</li>
+</ul>
+<h2 id="Flink-on-Kubernetes–JobManager"><a href="#Flink-on-Kubernetes–JobManager" class="headerlink" title="Flink on Kubernetes–JobManager"></a>Flink on Kubernetes–JobManager</h2><p>JobManager 的执行过程分为两步:</p>
+<ul>
+<li>首先，JobManager 通过 Deployment 进行描述，保证1个副本的 Container 运行 JobManager，可以定义一个标签，例如 flink-jobmanager。</li>
+<li>其次，还需要定义一个 JobManager Service，通过 service name 和 port 暴露 JobManager 服务，通过标签选择对应的 pods。</li>
+</ul>
+<h2 id="Flink-on-Kubernetes–TaskManager"><a href="#Flink-on-Kubernetes–TaskManager" class="headerlink" title="Flink on Kubernetes–TaskManager"></a>Flink on Kubernetes–TaskManager</h2><p>TaskManager 也是通过 Deployment 来进行描述，保证n个副本的 Container 运行 TaskManager，同时也需要定义一个标签，例如 flink-taskmanager。</p>
+<p>对于 JobManager 和 TaskManager 运行过程中需要的一些配置文件，如：flink-conf.yaml、hdfs-site.xml、core-site.xml，可以通过将它们定义为 ConfigMap 来实现配置的传递和读取。</p>
+<h2 id="Flink-on-Kubernetes–交互"><a href="#Flink-on-Kubernetes–交互" class="headerlink" title="Flink on Kubernetes–交互"></a>Flink on Kubernetes–交互</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224154.jpg" alt=""></p>
+<p>整个交互的流程比较简单，用户往 Kubernetes 集群提交定义好的资源描述文件即可，例如 deployment、configmap、service 等描述。后续的事情就交给 Kubernetes 集群自动完成。Kubernetes 集群会按照定义好的描述来启动 pod，运行用户程序。各个组件的具体工作如下：</p>
+<ul>
+<li>Service: 通过标签(label selector)找到 job manager 的 pod 暴露服务。</li>
+<li>Deployment：保证 n 个副本的 container 运行 JM/TM，应用升级策略。</li>
+<li>ConfigMap：在每个 pod 上通过挂载 /etc/flink 目录，包含 flink-conf.yaml 内容。</li>
+</ul>
+<h2 id="Flink-on-Kubernetes–实践"><a href="#Flink-on-Kubernetes–实践" class="headerlink" title="Flink on Kubernetes–实践"></a>Flink on Kubernetes–实践</h2><p>接下来就讲一下 Flink on Kubernetes 的实践篇，即<a href="https://zhoukaibo.com/tags/k8s/">K8s</a>上是怎么运行任务的。 </p>
+<h3 id="Session-Cluster"><a href="#Session-Cluster" class="headerlink" title="Session Cluster"></a>Session Cluster</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">•Session Cluster</span><br><span class="line">	•启动</span><br><span class="line">		•kubectl create -f jobmanager-service.yaml </span><br><span class="line">		•kubectl create -f jobmanager-deployment.yaml </span><br><span class="line">		•kubectl create -f taskmanager-deployment.yaml</span><br><span class="line">	•Submit job</span><br><span class="line">		•kubectl port-forward service/flink-jobmanager 8081:8081</span><br><span class="line">		•bin/flink run -d -m localhost:8081 ./examples/streaming/TopSpeedWindowing.jar</span><br><span class="line">	•停止</span><br><span class="line">		•kubectl delete -f jobmanager-deployment.yaml </span><br><span class="line">		•kubectl delete -f taskmanager-deployment.yaml </span><br><span class="line">		•kubectl delete -f  jobmanager-service.yaml</span><br></pre></td></tr></table></figure>
+<p>首先启动 Session Cluster，执行上述三条启动命令就可以将 Flink 的 JobManager-service、jobmanager-deployment、taskmanager-deployment 启动起来。启动完成之后用户可以通过接口进行访问，然后通过端口进行提交任务。若想销毁集群，直接用 kubectl delete 即可，整个资源就可以销毁。</p>
+<p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224215.jpg" alt=""></p>
+<p><a href="https://zhoukaibo.com/tags/flink/">Flink</a> 官方提供的例子如图所示，图中左侧为 jobmanager-deployment.yaml 配置，右侧为 taskmanager-deployment.yaml 配置。</p>
+<p>在 jobmanager-deployment.yaml 配置中，代码的第一行为 apiVersion，apiVersion 是API的一个版本号，版本号用的是 extensions/vlbetal 版本。资源类型为 Deployment，元数据 metadata 的名为 flink-jobmanager，spec 中含有副本数为1的 replicas，labels 标签用于 pod 的选取。containers 的镜像名为 jobmanager，containers 包含从公共 docker 仓库下载的 image，当然也可以使用公司内部的私有仓库。args 启动参数用于决定启动的是 jobmanager 还是 taskmanager；ports 是服务端口，常见的服务端口为8081端口；env 是定义的环境变量，会传递给具体的启动脚本。</p>
+<p>右图为 taskmanager-deployment.yaml 配置，taskmanager-deployment.yaml 配置与 jobmanager-deployment.yaml 相似，但 taskmanager-deployment.yaml 的副本数是2个。</p>
+<p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20191015224230.png" alt=""></p>
+<p>接下来是 jobmanager-service.yaml 的配置，jobmanager-service.yaml 的资源类型为 Service，在 Service 中的配置相对少一些，spec 中配置需要暴露的服务端口的 port，在 selector 中，通过标签选取  jobmanager 的 pod。</p>
+<h3 id="Job-Cluster"><a href="#Job-Cluster" class="headerlink" title="Job Cluster"></a>Job Cluster</h3><p>除了 Session 模式，还有一种 Per Job 模式。在 Per Job 模式下，需要将用户代码都打到镜像里面，这样如果业务逻辑的变动涉及到 Jar 包的修改，都需要重新生成镜像，整个过程比较繁琐，因此在生产环境中使用的比较少。</p>
+<p>以使用公用 docker 仓库为例，Job Cluster 的运行步骤如下：</p>
+<ul>
+<li>build 镜像：在 flink/flink-container/docker 目录下执行 build.sh 脚本，指定从哪个版本开始去构建镜像，成功后会输出 “Successfully tagged topspeed:latest” 的提示。</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sh build.sh --from-release --flink-version 1.7.0 --hadoop-version 2.8 --scala-version 2.11 --job-jar ~/flink/flink-1.7.1/examples/streaming/TopSpeedWindowing.jar --image-name topspeed</span><br></pre></td></tr></table></figure>
+<ul>
+<li>上传镜像：在 hub.docker.com 上需要注册账号和创建仓库进行上传镜像。</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">docker tag topspeed zkb555/topspeedwindowing </span><br><span class="line">docker push zkb555/topspeedwindowing</span><br></pre></td></tr></table></figure>
+<ul>
+<li>启动任务：在镜像上传之后，可以启动任务。</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">kubectl create -f job-cluster-service.yaml </span><br><span class="line">FLINK_IMAGE_NAME=zkb555/topspeedwindowing:latest FLINK_JOB=org.apache.flink.streaming.examples.windowing.TopSpeedWindowing FLINK_JOB_PARALLELISM=3 envsubst &lt; job-cluster-job.yaml.template | kubectl create -f – </span><br><span class="line">FLINK_IMAGE_NAME=zkb555/topspeedwindowing:latest FLINK_JOB_PARALLELISM=4 envsubst &lt; task-manager-deployment.yaml.template | kubectl create -f -</span><br></pre></td></tr></table></figure>
+<h1 id="Flink-on-Yarn-Kubernetes-问题解答"><a href="#Flink-on-Yarn-Kubernetes-问题解答" class="headerlink" title="Flink on Yarn/Kubernetes 问题解答"></a>Flink on Yarn/Kubernetes 问题解答</h1><p><strong>问题一： Flink 在 k8s 上可以通过 Operator 方式提交任务吗？</strong></p>
+<p>目前 Flink 官方还没有提供 Operator 的方式，Lyft 公司开源了自己的 Operator 实现：<a href="https://github.com/lyft/flinkk8soperator。GoogleCloudPlatform" target="_blank" rel="noopener">https://github.com/lyft/flinkk8soperator。GoogleCloudPlatform</a> 也开源了一个实现：<a href="https://github.com/GoogleCloudPlatform/flink-on-k8s-operator。" target="_blank" rel="noopener">https://github.com/GoogleCloudPlatform/flink-on-k8s-operator。</a></p>
+<p><strong>问题二： 在 k8s 集群上如果不使用 Zookeeper 有没有其他高可用（HA）的方案？</strong></p>
+<p>Etcd 是一个类似于 Zookeeper 的高可用键值服务，目前 Flink 社区正在考虑基于 Etcd 实现高可用的方案（<a href="https://issues.apache.org/jira/browse/FLINK-11105）以及直接依赖" target="_blank" rel="noopener">https://issues.apache.org/jira/browse/FLINK-11105）以及直接依赖</a> k8s API的方案（<a href="https://issues.apache.org/jira/browse/FLINK-12884）。" target="_blank" rel="noopener">https://issues.apache.org/jira/browse/FLINK-12884）。</a></p>
+<p><strong>问题三： Flink on k8s 在任务启动时需要指定 TaskManager 的个数，有和 Yarn 一样的动态资源申请方式吗？</strong></p>
+<p>Flink on k8s 目前的实现在任务启动前就需要确定好 TaskManager 的个数，这样容易造成 TM 指定太少，任务无法启动，或者指定的太多，造成资源浪费。社区正在考虑实现和 Yarn 一样的任务启动时动态资源申请的方式。这是一种和 k8s 结合的更为 nativey 的方式，称为 active 模式。Active 意味着 ResourceManager 可以直接向 k8s 集群申请资源。具体设计方案和进展请关注：<a href="https://issues.apache.org/jira/browse/FLINK-9953。" target="_blank" rel="noopener">https://issues.apache.org/jira/browse/FLINK-9953。</a></p>
+</div><div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>kaibo</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="/2019/10/15/flink-yarn-k8s-principle-practice/">https://zhoukaibo.com/2019/10/15/flink-yarn-k8s-principle-practice/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>转载请保留作者及链接</li></ul></div><br><div class="tags"><a href="/tags/flink/">flink</a><a href="/tags/yarn/">yarn</a><a href="/tags/kubernetes/">kubernetes</a><a href="/tags/k8s/">k8s</a></div><div class="post-nav"><a class="next" href="/2019/10/15/apache-flink-intro-client/">Apache Flink 客户端操作</a></div><div id="disqus_thread"><div class="btn_click_load"><button class="disqus_click_btn">阅读评论（请确保 Disqus 可以正常加载）</button></div><script type="text/javascript">var disqus_config = function () {
+    this.page.url = 'https://zhoukaibo.com/2019/10/15/flink-yarn-k8s-principle-practice/';
+    this.page.identifier = '2019/10/15/flink-yarn-k8s-principle-practice/';
+    this.page.title = 'flink-yarn-k8s-principle-practice';
+  };</script><script type="text/javascript" id="disqus-lazy-load-script">$.ajax({
+url: 'https://disqus.com/next/config.json',
+timeout: 2500,
+type: 'GET',
+success: function(){
+  var d = document;
+  var s = d.createElement('script');
+  s.src = '//flying5.disqus.com/embed.js';
+  s.setAttribute('data-timestamp', + new Date());
+  (d.head || d.body).appendChild(s);
+  $('.disqus_click_btn').css('display', 'none');
+},
+error: function() {
+  $('.disqus_click_btn').css('display', 'block');
+}
+});</script><script type="text/javascript" id="disqus-click-load">$('.btn_click_load').click(() => {  //click to load comments
+    (() => { // DON'T EDIT BELOW THIS LINE
+        var d = document;
+        var s = d.createElement('script');
+        s.src = '//flying5.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', + new Date());
+        (d.head || d.body).appendChild(s);
+    })();
+    $('.disqus_click_btn').css('display','none');
+});</script><script type="text/javascript" id="disqus-count-script">$(function() {
+     var xhr = new XMLHttpRequest();
+     xhr.open('GET', '//disqus.com/next/config.json', true);
+     xhr.timeout = 2500;
+     xhr.onreadystatechange = function () {
+       if (xhr.readyState === 4 && xhr.status === 200) {
+         $('.post-meta .post-comments-count').show();
+         var s = document.createElement('script');
+         s.id = 'dsq-count-scr';
+         s.src = 'https://flying5.disqus.com/count.js';
+         s.async = true;
+         (document.head || document.body).appendChild(s);
+       }
+     };
+     xhr.ontimeout = function () { xhr.abort(); };
+     xhr.send(null);
+   });
+</script></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://zhoukaibo.com"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/spi/" style="font-size: 15px;">spi</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 15px;">kafka</a> <a href="/tags/exactly-once/" style="font-size: 15px;">exactly-once</a> <a href="/tags/at-least-once/" style="font-size: 15px;">at-least-once</a> <a href="/tags/yarn/" style="font-size: 15px;">yarn</a> <a href="/tags/kubernetes/" style="font-size: 15px;">kubernetes</a> <a href="/tags/k8s/" style="font-size: 15px;">k8s</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/10/15/flink-yarn-k8s-principle-practice/">flink-yarn-k8s-principle-practice</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/10/15/apache-flink-intro-client/">Apache Flink 客户端操作</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/03/16/java-spi/">Java SPI 机制分析及其优缺点</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/02/14/exactly-once-exactly-same/">谈谈流计算中的『Exactly Once』特性</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/flink-kafka-exactly-once/">Apache Flink结合Kafka构建端到端的Exactly-Once处理</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/hello-world/">Hello World</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-comment-o"> 最近评论</i></div><script type="text/javascript" src="//flying5.disqus.com/recent_comments_widget.js?num_items=5&amp;hide_avatars=1&amp;avatar_size=32&amp;excerpt_length=20&amp;hide_mods=1"></script></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">Kaibo's Blog</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.1" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.1" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.1"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.1"></script></div></body></html>

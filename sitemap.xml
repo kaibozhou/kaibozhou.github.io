@@ -2,9 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://zhoukaibo.com/2019/10/15/flink-yarn-k8s-principle-practice/</loc>
+    
+    <lastmod>2019-10-15T14:48:28.105Z</lastmod>
+    
+  </url>
+  
+  <url>
     <loc>https://zhoukaibo.com/2019/10/15/apache-flink-intro-client/</loc>
     
-    <lastmod>2019-10-15T14:30:11.724Z</lastmod>
+    <lastmod>2019-10-15T14:35:53.047Z</lastmod>
     
   </url>
   
