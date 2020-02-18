@@ -1,0 +1,116 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>Flink 1.10 Native Kubernetes 原理与实践 | Kaibo's Blog</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.1"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/normalize/8.0.1/normalize.min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//lib.baomitu.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//lib.baomitu.com/jquery/3.3.1/jquery.min.js"></script><link rel="icon" mask="" sizes="any" href="/favicon.ico"><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"><script>(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+ga('create','UA-131716279-1','auto');ga('send','pageview');
+</script><script>var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = 'https://hm.baidu.com/hm.js?' + 'adcf6eb324ad0475bb957857cf925dda';
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+  })();</script></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">Flink 1.10 Native Kubernetes 原理与实践</h1><a id="logo" href="/.">Kaibo's Blog</a><p class="description">Real-time big data processing</p></div><div id="nav-menu"><a class="current" href="/."><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a></div></div><div class="pure-g" id="layout"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">Flink 1.10 Native Kubernetes 原理与实践</h1><div class="post-meta">Feb 18, 2020<script src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><a class="disqus-comment-count" data-disqus-identifier="2020/02/18/Flink-1-10-Native-Kubernetes/" href="/2020/02/18/Flink-1-10-Native-Kubernetes/#disqus_thread"></a><div class="clear"><div class="toc-article" id="toc"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#原理"><span class="toc-number">1.</span> <span class="toc-text">原理</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#实践"><span class="toc-number">2.</span> <span class="toc-text">实践</span></a></li></ol></div></div><div class="post-content"><p>千呼万唤始出来，在 Kubernetes 如火如荼的今天，Flink 社区终于在 1.10 版本提供了对 Kubernetes 的原生支持，也就是 <a href="https://flink.apache.org/news/2020/02/11/release-1.10.0.html#native-kubernetes-integration-beta" target="_blank" rel="noopener">Native Kubernetes Integration</a>。不过还只是Beta版本，预计会在 1.11 版本里面提供完整的支持。</p>
+<p>我们知道，在 Flink 1.9 以及之前的版本里面，如果要在 Kubernetes 上运行 Flink 任务是需要事先指定好需要的 TaskManager(TM) 的个数以及CPU和内存的。这样的问题是：大多数情况下，你在任务启动前根本无法精确的预估这个任务需要多少个TM。如果指定的TM多了，会导致资源浪费；如果指定的TM个数少了，会导致任务调度不起来。本质原因是在 Kubernetes 上运行的 Flink 任务并没有直接向 Kubernetes API Server 去申请资源。</p>
+<p>Flink 在 1.10 版本完成了<code>Active Kubernetes Integration</code>的第一阶段，支持了 session clusters。后续的第二阶段会提供更完整的支持，如支持 per-job 任务提交，以及基于原生 Kubernetes API 的高可用，支持更多的 Kubernetes 参数如 toleration, label 和 node selector 等。<code>Active Kubernetes Integration</code>中的<code>Active</code>意味着 Flink 的 ResourceManager (KubernetesResourceManager) 可以直接和 Kubernetes 通信，按需申请新的 Pod，类似于 Flink 中对 Yarn 和 Mesos 的集成所做的那样。在多租户环境中，用户可以利用 Kubernetes 里面的 namespace 做资源隔离启动不同的 Flink 集群。当然，Kubernetes 中的 RBAC 角色和用户帐号是需要提前创建好的。 </p>
+<h2 id="原理"><a href="#原理" class="headerlink" title="原理"></a>原理</h2><p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20200218232746.png" alt="Flink 1.10 native k8s"></p>
+<p>工作原理如下（段首的序号对应图中箭头所示的数字）：</p>
+<ol>
+<li><p>Flink 客户端首先连接 Kubernetes API Server，提交 Flink 集群的资源描述文件，包括 configmap，job manager service，job manager deployment 和 Owner Reference.</p>
+</li>
+<li><p>Kubernetes Master 就会根据这些资源描述文件去创建对应的 Kubernetes 实体。以我们最关心的 job manager deployment 为例，Kubernetes 集群中的某个节点收到请求后，Kubelet 进程会从中央仓库下载 Flink 镜像，准备和挂载 volume，然后执行启动命令。在 flink master 的 pod 启动后，Dispacher 和 KubernetesResourceManager 也都启动了。</p>
+<p>前面两步完成后，整个 Flink session cluster 就启动好了，可以接受提交任务请求了。</p>
+</li>
+<li><p>用户可以通过 flink 命令行即 flink client 往这个 session cluster 提交任务。此时 job graph 会在 flink client 端生成，然后和用户 jar 包一起通过 RestClinet 上传。</p>
+</li>
+<li><p>一旦 job 提交成功，JobSubmitHandler 收到请求就会提交 job 给 Dispatcher。接着就会生成一个 job master。</p>
+</li>
+<li><p>JobMaster 向 KubernetesResourceManager 请求 slots。</p>
+</li>
+<li><p>KubernetesResourceManager 从 Kubernetes 集群分配 TaskManager。每个TaskManager都是具有唯一表示的 Pod。KubernetesResourceManager 会为 TaskManager 生成一份新的配置文件，里面有 Flink Master 的 service name 作为地址。这样在 Flink Master failover之后，TaskManager 仍然可以重新连上。</p>
+</li>
+<li><p>Kubernetes 集群分配一个新的 Pod 后，在上面启动 TaskManager</p>
+</li>
+<li><p>TaskManager 启动后注册到 SlotManager</p>
+</li>
+<li><p>SlotManager 向 TaskManager 请求 slots</p>
+</li>
+<li><p>TaskManager 提供 slots 给 JobMaster。然后任务就会被分配到这个 slots 上运行。</p>
+</li>
+</ol>
+<h2 id="实践"><a href="#实践" class="headerlink" title="实践"></a>实践</h2><p>Flink 的<a href="https://ci.apache.org/projects/flink/flink-docs-release-1.10/ops/deployment/native_kubernetes.html" target="_blank" rel="noopener">文档</a>上对如何使用已经写的比较详细了，不过刚开始总会踩到一些坑。如果对 Kubernetes 不熟，可能会花点时间。</p>
+<p>(1) 首先得有个 Kubernetes 集群，会有个 <code>~/.kube/config</code> 文件。尝试执行 kubectl get nodes 看下集群是否正常。</p>
+<p>如果没有这个 <code>~/.kube/config</code> 文件，会报错：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">2020-02-17 22:27:17,253 WARN  io.fabric8.kubernetes.client.Config                           - Error reading service account token from: [/var/run/secrets/kubernetes.io/serviceaccount/token]. Ignoring.</span><br><span class="line">2020-02-17 22:27:17,437 ERROR org.apache.flink.kubernetes.cli.KubernetesSessionCli          - Error while running the Flink session.</span><br><span class="line">io.fabric8.kubernetes.client.KubernetesClientException: Operation: [get]  for kind: [Service]  with name: [flink-cluster-81832d75-662e-40fd-8564-cd5a902b243c]  in namespace: [default]  failed.</span><br><span class="line">	at io.fabric8.kubernetes.client.KubernetesClientException.launderThrowable(KubernetesClientException.java:64)</span><br><span class="line">	at io.fabric8.kubernetes.client.KubernetesClientException.launderThrowable(KubernetesClientException.java:72)</span><br><span class="line">	at io.fabric8.kubernetes.client.dsl.base.BaseOperation.getMandatory(BaseOperation.java:231)</span><br><span class="line">	at io.fabric8.kubernetes.client.dsl.base.BaseOperation.get(BaseOperation.java:164)</span><br><span class="line">	at org.apache.flink.kubernetes.kubeclient.Fabric8FlinkKubeClient.getService(Fabric8FlinkKubeClient.java:334)</span><br><span class="line">	at org.apache.flink.kubernetes.kubeclient.Fabric8FlinkKubeClient.getInternalService(Fabric8FlinkKubeClient.java:246)</span><br><span class="line">	at org.apache.flink.kubernetes.cli.KubernetesSessionCli.run(KubernetesSessionCli.java:104)</span><br><span class="line">	at org.apache.flink.kubernetes.cli.KubernetesSessionCli.lambda$main$0(KubernetesSessionCli.java:185)</span><br><span class="line">	at org.apache.flink.runtime.security.NoOpSecurityContext.runSecured(NoOpSecurityContext.java:30)</span><br><span class="line">	at org.apache.flink.kubernetes.cli.KubernetesSessionCli.main(KubernetesSessionCli.java:185)</span><br><span class="line">Caused by: java.net.UnknownHostException: kubernetes.default.svc: nodename nor servname provided, or not known</span><br></pre></td></tr></table></figure>
+<p>(2) 提前创建好用户</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl create serviceaccount flink</span><br><span class="line">kubectl create clusterrolebinding flink-role-binding-flink --clusterrole=edit --serviceaccount=default:flink</span><br></pre></td></tr></table></figure>
+<p>如果没有创建用户，使用默认的用户去提交，会报错：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Caused by: io.fabric8.kubernetes.client.KubernetesClientException: Failure executing: GET at: https://10.10.0.1/api/v1/namespaces/default/pods?labelSelector=app%3Dkaibo-test%2Ccomponent%3Dtaskmanager%2Ctype%3Dflink-native-kubernetes. </span><br><span class="line"></span><br><span class="line">Message: Forbidden!Configured service account doesn&apos;t have access. </span><br><span class="line">Service account may have been revoked. pods is forbidden: </span><br><span class="line">User &quot;system:serviceaccount:default:default&quot; cannot list resource &quot;pods&quot; in API group &quot;&quot; in the namespace &quot;default&quot;.</span><br></pre></td></tr></table></figure>
+<p>(3) 这一步是可选的。默认情况下, JobManager 和 TaskManager 只会将 log 写到各自 pod 的 /opt/flink/log. 如果想通过 kubectl logs <podname> 看到日志，需要将 log 输出到控制台。要做如下修改 FLINK_HOME/conf 目录下的 log4j.properties 文件。</podname></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">log4j.rootLogger=INFO, file, console</span><br><span class="line"></span><br><span class="line"># Log all infos to the console</span><br><span class="line">log4j.appender.console=org.apache.log4j.ConsoleAppender</span><br><span class="line">log4j.appender.console.layout=org.apache.log4j.PatternLayout</span><br><span class="line">log4j.appender.console.layout.ConversionPattern=%d&#123;yyyy-MM-dd HH:mm:ss,SSS&#125; %-5p %-60c %x - %m%n</span><br></pre></td></tr></table></figure>
+<p>然后启动 session cluster 的命令行需要带上参数:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">-Dkubernetes.container-start-command-template=&quot;%java% %classpath% %jvmmem% %jvmopts% %logging% %class% %args%&quot;</span><br></pre></td></tr></table></figure>
+<p>(4) 终于可以开始启动 session cluster了</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bin/kubernetes-session.sh -Dkubernetes.container-start-command-template=&quot;%java% %classpath% %jvmmem% %jvmopts% %logging% %class% %args%&quot; -Dkubernetes.cluster-id=kaibo-test -Dtaskmanager.memory.process.size=4096m -Dkubernetes.taskmanager.cpu=2 -Dtaskmanager.numberOfTaskSlots=4</span><br></pre></td></tr></table></figure>
+<p>使用 <code>kubectl logs kaibo-test-6f7dffcbcf-c2p7g -f</code> 就能看到日志了。</p>
+<p>如果出现大量的如下这种日志：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">2020-02-17 14:58:56,323 WARN  org.apache.flink.runtime.dispatcher.DispatcherRestEndpoint    - Unhandled exception</span><br><span class="line">java.io.IOException: Connection reset by peer</span><br><span class="line">	at sun.nio.ch.FileDispatcherImpl.read0(Native Method)</span><br><span class="line">	at sun.nio.ch.SocketDispatcher.read(SocketDispatcher.java:39)</span><br><span class="line">	at sun.nio.ch.IOUtil.readIntoNativeBuffer(IOUtil.java:223)</span><br><span class="line">	at sun.nio.ch.IOUtil.read(IOUtil.java:192)</span><br><span class="line">	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:377)</span><br><span class="line">	at org.apache.flink.shaded.netty4.io.netty.buffer.PooledByteBuf.setBytes(PooledByteBuf.java:247)</span><br></pre></td></tr></table></figure>
+<p>可以暂时在 log4j.properties 里面配置上：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">log4j.logger.org.apache.flink.runtime.dispatcher.DispatcherRestEndpoint=ERROR, file</span><br></pre></td></tr></table></figure></p>
+<p>这个日志太多会导致 WebUI 上打开 jobmanger log 是空白，因为文件太大了前端无法显示。</p>
+<p>如果前面第(1)和第(2)步没有做，会出现各种异常，通过 kubectl logs 就能很方便的看到日志了。</p>
+<p>session cluster 启动后可以通过 kubectl get pods,svc 来看是否正常。</p>
+<p>查看 Web UI 的命令：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl port-forward service/kaibo-test 8081</span><br></pre></td></tr></table></figure></p>
+<p>通过 <a href="http://127.0.0.1:8001" target="_blank" rel="noopener">http://127.0.0.1:8001</a> 就能打开 Flink 的 WebUI 了。</p>
+<p>(5) 提交任务</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./bin/flink run -d -e kubernetes-session -Dkubernetes.cluster-id=kaibo-test examples/streaming/TopSpeedWindowing.jar</span><br></pre></td></tr></table></figure>
+<p>我们从 Flink WebUI 页面上可以看到，刚开始启动时，UI上显示 Total/Available Task Slots 为0, Task Managers 也是0。随着任务的提交，资源会动态增加。任务停止后，资源会释放掉。</p>
+<p>在提交任务后，通过 kubectl get pods 能够看到 Flink 为TaskManager分配了新的Pod。</p>
+<p><img src="https://raw.githubusercontent.com/kaibozhou/kaibozhou.github.io/img/20200219003114.png" alt="pods"></p>
+<p>(6) 停止session cluster</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &apos;stop&apos; | ./bin/kubernetes-session.sh -Dkubernetes.cluster-id=kaibo-test -Dexecution.attached=true</span><br></pre></td></tr></table></figure>
+<p>也可以手工删除资源：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl delete service/&lt;ClusterID&gt;</span><br></pre></td></tr></table></figure></p>
+</div><div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>kaibo</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="/2020/02/18/Flink-1-10-Native-Kubernetes/">https://zhoukaibo.com/2020/02/18/Flink-1-10-Native-Kubernetes/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>转载请保留作者及链接</li></ul></div><br><div class="tags"><a href="/tags/flink/">flink</a><a href="/tags/kubernetes/">kubernetes</a></div><div class="post-nav"><a class="next" href="/2019/10/15/flink-yarn-k8s-principle-practice/">Flink on Yarn / Kubernetes 原理剖析及实践</a></div><div id="disqus_thread"><div class="btn_click_load"><button class="disqus_click_btn">阅读评论（请确保 Disqus 可以正常加载）</button></div><script type="text/javascript">var disqus_config = function () {
+    this.page.url = 'https://zhoukaibo.com/2020/02/18/Flink-1-10-Native-Kubernetes/';
+    this.page.identifier = '2020/02/18/Flink-1-10-Native-Kubernetes/';
+    this.page.title = 'Flink 1.10 Native Kubernetes 原理与实践';
+  };</script><script type="text/javascript" id="disqus-lazy-load-script">$.ajax({
+url: 'https://disqus.com/next/config.json',
+timeout: 2500,
+type: 'GET',
+success: function(){
+  var d = document;
+  var s = d.createElement('script');
+  s.src = '//flying5.disqus.com/embed.js';
+  s.setAttribute('data-timestamp', + new Date());
+  (d.head || d.body).appendChild(s);
+  $('.disqus_click_btn').css('display', 'none');
+},
+error: function() {
+  $('.disqus_click_btn').css('display', 'block');
+}
+});</script><script type="text/javascript" id="disqus-click-load">$('.btn_click_load').click(() => {  //click to load comments
+    (() => { // DON'T EDIT BELOW THIS LINE
+        var d = document;
+        var s = d.createElement('script');
+        s.src = '//flying5.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', + new Date());
+        (d.head || d.body).appendChild(s);
+    })();
+    $('.disqus_click_btn').css('display','none');
+});</script><script type="text/javascript" id="disqus-count-script">$(function() {
+     var xhr = new XMLHttpRequest();
+     xhr.open('GET', '//disqus.com/next/config.json', true);
+     xhr.timeout = 2500;
+     xhr.onreadystatechange = function () {
+       if (xhr.readyState === 4 && xhr.status === 200) {
+         $('.post-meta .post-comments-count').show();
+         var s = document.createElement('script');
+         s.id = 'dsq-count-scr';
+         s.src = 'https://flying5.disqus.com/count.js';
+         s.async = true;
+         (document.head || document.body).appendChild(s);
+       }
+     };
+     xhr.ontimeout = function () { xhr.abort(); };
+     xhr.send(null);
+   });
+</script></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form class="search-form" action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://zhoukaibo.com"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/spi/" style="font-size: 15px;">spi</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kubernetes/" style="font-size: 15px;">kubernetes</a> <a href="/tags/exactly-once/" style="font-size: 15px;">exactly-once</a> <a href="/tags/at-least-once/" style="font-size: 15px;">at-least-once</a> <a href="/tags/kafka/" style="font-size: 15px;">kafka</a> <a href="/tags/yarn/" style="font-size: 15px;">yarn</a> <a href="/tags/k8s/" style="font-size: 15px;">k8s</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2020/02/18/Flink-1-10-Native-Kubernetes/">Flink 1.10 Native Kubernetes 原理与实践</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/10/15/flink-yarn-k8s-principle-practice/">Flink on Yarn / Kubernetes 原理剖析及实践</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/10/15/apache-flink-intro-client/">Apache Flink 客户端操作</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/03/16/java-spi/">Java SPI 机制分析及其优缺点</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/02/14/exactly-once-exactly-same/">谈谈流计算中的『Exactly Once』特性</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/flink-kafka-exactly-once/">Apache Flink结合Kafka构建端到端的Exactly-Once处理</a></li><li class="post-list-item"><a class="post-list-link" href="/2019/01/10/hello-world/">Hello World</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-comment-o"> 最近评论</i></div><script type="text/javascript" src="//flying5.disqus.com/recent_comments_widget.js?num_items=5&amp;hide_avatars=1&amp;avatar_size=32&amp;excerpt_length=20&amp;hide_mods=1"></script></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2020 <a href="/." rel="nofollow">Kaibo's Blog</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.1" async></script><script type="text/javascript" src="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.1" async></script><link rel="stylesheet" type="text/css" href="//lib.baomitu.com/fancybox/3.5.2/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.1"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.1"></script></div></body></html>
