@@ -2,9 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://zhoukaibo.com/2021/03/27/ten-flink-gotchas/</loc>
+    
+    <lastmod>2021-03-27T05:10:23.286Z</lastmod>
+    
+  </url>
+  
+  <url>
     <loc>https://zhoukaibo.com/2020/02/18/Flink-1-10-Native-Kubernetes/</loc>
     
-    <lastmod>2020-02-19T09:19:16.525Z</lastmod>
+    <lastmod>2020-02-19T09:19:30.905Z</lastmod>
     
   </url>
   
